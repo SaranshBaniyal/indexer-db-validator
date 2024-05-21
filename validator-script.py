@@ -4,6 +4,31 @@ from psycopg2.extras import RealDictCursor
 
 logger = logging.getLogger()
 
+tx_msg_type = [
+    'msggrant',
+    'msgexec',
+    'msgrevoke',
+    'msgsend',
+    'msgmultisend',
+    'msgverifyinvariant',
+    'msgsetwithdrawaddress',
+    'msgwithdrawdelegatorreward',
+    'msgwithdrawvalidatorcommission',
+    'msgfundcommunitypool',
+    'msgsubmitevidence',
+    'msggrantallowance',
+    'msgrevokeallowance',
+    'msgsubmitproposal',
+    'msgvoteproposal',
+    'msgdepositproposal',
+    'msgvoteweightedproposal',
+    'msgunjail',
+    'msgdelegate',
+    'msgbeginredelegate',
+    'msgundelegate',
+    'msgcancelunbondingdelegation'
+]
+
 class IndexerDatabase:
     def __init__(self, db_name, user, password, host, port):
 
@@ -28,7 +53,7 @@ def main(start_height, end_height):
     ingesrs = IndexerDatabase(db_name='indexerdb', user='postgres', password='postgres', host='localhost', port='5432')
 
     with ingespy.conn as py_conn, ingesrs.conn as rs_conn:
-        with py_conn.cursor() as py_cursor, rs_conn.cursor() as rs_cursor:
+        with py_conn.cursor(cursor_factory=RealDictCursor) as py_cursor, rs_conn.cursor(cursor_factory=RealDictCursor) as rs_cursor:
             py_cursor.execute("""
                                 SELECT height, proposer, hash, block_time, txcount, chain_id, total_gas_wanted, total_gas_used, metadata
                                 FROM block_metadata
@@ -70,21 +95,41 @@ def main(start_height, end_height):
                                     FROM msg_fact_table
                                     WHERE tx_hash = %s
                                     ORDER BY msg_index;
-                                    """, (tx[1],))
+                                    """, (tx["tx_hash"],))
                 py_msgs = py_cursor.fetchall()
                 rs_cursor.execute("""
                                     SELECT tx_hash, msg_index, msg_type
                                     FROM msg_fact_table
                                     WHERE tx_hash = %s
                                     ORDER BY msg_index;
-                                    """, (tx[1],))
+                                    """, (tx["tx_hash"],))
                 rs_msgs = rs_cursor.fetchall()
 
                 if(py_msgs != rs_msgs):
                     logger.error(f"Inconsistent transaction message data")
                     return False
+                
+            for msg_type in tx_msg_type:
+                py_cursor.execute(f"""
+                                SELECT *
+                                FROM {msg_type}
+                                WHERE height BETWEEN {start_height} AND {end_height}
+                                ORDER BY height, hash, index;
+                                """, (start_height, end_height))
+                py_msg_body = py_cursor.fetchall()
+                rs_cursor.execute(f"""
+                                    SELECT *
+                                    FROM {msg_type}
+                                    WHERE height BETWEEN {start_height} AND {end_height}
+                                    ORDER BY height, hash, index;
+                                    """, (start_height, end_height))
+                rs_msg_body = rs_cursor.fetchall()
+
+                if(py_msg_body != rs_msg_body):
+                    logger.error(f"Inconsistent transaction message body data")
+                    return False
             
             return True
 
 if __name__ == "__main__":
-    print(main(19906800, 19906804))
+    print(main(19906800, 19906809))
