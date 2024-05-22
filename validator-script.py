@@ -29,6 +29,16 @@ tx_msg_type = [
     'msgcancelunbondingdelegation'
 ]
 
+def compare_dict_lists(a, b, ignore_key=None):
+    if len(a) != len(b):
+        raise ValueError("Lists a and b must have the same length.")
+    
+    for dict_a, dict_b in zip(a, b):
+        for key in dict_a:
+            if key != ignore_key and dict_a.get(key) != dict_b.get(key):
+                return dict_a
+    return None
+
 class IndexerDatabase:
     def __init__(self, db_name, user, password, host, port):
 
@@ -55,58 +65,67 @@ def main(start_height, end_height):
     with ingespy.conn as py_conn, ingesrs.conn as rs_conn:
         with py_conn.cursor(cursor_factory=RealDictCursor) as py_cursor, rs_conn.cursor(cursor_factory=RealDictCursor) as rs_cursor:
             py_cursor.execute("""
-                                SELECT height, proposer, hash, block_time, txcount, chain_id, total_gas_wanted, total_gas_used, metadata
+                                SELECT *
                                 FROM block_metadata
-                                WHERE height BETWEEN %s AND %s ;
+                                WHERE height BETWEEN %s AND %s
+                                ORDER BY height;
                                 """, (start_height, end_height))
             py_blocks = py_cursor.fetchall()
             rs_cursor.execute("""
-                                SELECT height, proposer, hash, block_time, txcount, chain_id, total_gas_wanted, total_gas_used, metadata
+                                SELECT *
                                 FROM block_metadata
-                                WHERE height BETWEEN %s AND %s ;
+                                WHERE height BETWEEN %s AND %s
+                                ORDER BY height;
                                 """, (start_height, end_height))
             rs_blocks = rs_cursor.fetchall()
-            # TODO: exclude rowid maybe
-            if(py_blocks != rs_blocks):
-                logger.error(f"Inconsistent block data")
+
+            result = compare_dict_lists(py_blocks, rs_blocks, "rowid")
+            if result:
+                logger.error(f"Inconsistent block data at height {result['height']}")
+                result=None
                 return False
 
             py_cursor.execute("""
-                                SELECT height, tx_hash, tx_index, tx_time, code, log, info, gas_wanted, gas_used, fees, codespace
+                                SELECT *
                                 FROM txn_fact_table
                                 WHERE height BETWEEN %s AND %s
                                 ORDER BY height, tx_index;
                                 """, (start_height, end_height))
             py_txns = py_cursor.fetchall()
             rs_cursor.execute("""
-                                SELECT height, tx_hash, tx_index, tx_time, code, log, info, gas_wanted, gas_used, fees, codespace
+                                SELECT *
                                 FROM txn_fact_table
                                 WHERE height BETWEEN %s AND %s
                                 ORDER BY height, tx_index;
                                 """, (start_height, end_height))
             rs_txns = rs_cursor.fetchall()
-            if(py_txns != rs_txns):
-                logger.error(f"Inconsistent transaction data")
+            result = compare_dict_lists(py_txns, rs_txns, "rowid")
+            if result:
+                logger.error(f"Inconsistent transaction data at height {result['height']} and tx_hash {result['tx_hash']}")
+                result = None
                 return False
             
             for tx in py_txns:
                 py_cursor.execute("""
-                                    SELECT tx_hash, msg_index, msg_type
+                                    SELECT *
                                     FROM msg_fact_table
                                     WHERE tx_hash = %s
                                     ORDER BY msg_index;
                                     """, (tx["tx_hash"],))
                 py_msgs = py_cursor.fetchall()
                 rs_cursor.execute("""
-                                    SELECT tx_hash, msg_index, msg_type
+                                    SELECT *
                                     FROM msg_fact_table
                                     WHERE tx_hash = %s
                                     ORDER BY msg_index;
                                     """, (tx["tx_hash"],))
                 rs_msgs = rs_cursor.fetchall()
 
-                if(py_msgs != rs_msgs):
-                    logger.error(f"Inconsistent transaction message data")
+                result = compare_dict_lists(py_msgs, rs_msgs, "rowid")
+                if result:
+                    logger.error(f"Inconsistent transaction message at height {tx['height']}, "
+                                 f"tx_hash {result['tx_hash']}, msg_index {result['msg_index']} and msg_type {result['msg_type']}")
+                    result = None
                     return False
                 
             for msg_type in tx_msg_type:
@@ -125,8 +144,12 @@ def main(start_height, end_height):
                                     """, (start_height, end_height))
                 rs_msg_body = rs_cursor.fetchall()
 
-                if(py_msg_body != rs_msg_body):
-                    logger.error(f"Inconsistent transaction message body data")
+                result = compare_dict_lists(py_msg_body, rs_msg_body, "rowid")
+                if result:
+                    logger.error(f"Inconsistent transaction message body at height {tx['height']}, "
+                                 f"tx_hash {result['tx_hash']}, msg_index {result['msg_index']}, msg_type {result['msg_type']} and"
+                                 f"msg_index {result['index']}")
+                    result = None
                     return False
             
             return True
