@@ -212,7 +212,97 @@ def main():
                 while j<len(rs_msg_body):
                     logger.error(f"Couldn't find message entry with block height {rs_msg_body[j]['height']}, tx_hash {rs_msg_body[j]['hash']} and msg_index {rs_msg_body[j]['index']} in {msg_type} table of {ingespy._PG_DB}")
                     j+=1
+
+            #for checking state tables of different modules at the latest height
+            py_cursor.execute("""
+                            SELECT *
+                            FROM module_state
+                            ORDER BY module_name;
+                            """)
+            py_module_state = py_cursor.fetchall()
+            rs_cursor.execute("""
+                            SELECT *
+                            FROM module_state
+                            ORDER BY module_name;
+                            """)
+            rs_module_state = rs_cursor.fetchall()
+
+            i=0
+            j=0
             
+            while i<len(py_module_state) and j<len(rs_module_state):
+                if py_module_state[i]['module_name'] == rs_module_state[j]['module_name']:
+                    if py_module_state[i]['last_update_height'] == rs_module_state[j]['last_update_height']:
+                        if py_module_state[i]['module_name']=="balances":
+                            pass
+                        elif py_module_state[i]['module_name']=="denom_metadata":
+                            pass
+                        elif py_module_state[i]['module_name']=="staked":
+                            pass
+                        elif py_module_state[i]['module_name']=="unstaking":
+                            pass
+                        elif py_module_state[i]['module_name']=="validator_metadata":
+                            pass
+                    else:
+                        logger.error(f"Inconsistent last_update_height for {py_module_state[i]['module_name']}: {ingespy._PG_DB}: {py_module_state[i]['last_update_height']}, {ingesrs._PG_DB}: {rs_module_state[j]['last_update_height']}")
+                    i+=1
+                    j+=1
+
+                elif py_module_state[i]['module_name'] < rs_module_state[j]['module_name']:
+                    logger.error(f"Couldn't find {py_module_state[i]['module_name']} in module_state table of {ingesrs._PG_DB}")
+                    i+=1
+
+
+                elif py_module_state[i]['module_name'] > rs_module_state[j]['module_name']:
+                    logger.error(f"Couldn't find {rs_module_state[j]['module_name']} in module_state table of {ingespy._PG_DB}")
+                    j+=1
+
+            while i<len(py_module_state):
+                logger.error(f"Couldn't find {py_module_state[i]['module_name']} in module_state table of {ingesrs._PG_DB}")
+                i+=1
+            while j<len(rs_module_state):
+                logger.error(f"Couldn't find {rs_module_state[j]['module_name']} in module_state table of {ingespy._PG_DB}")
+                j+=1
+
+
+
+            py_cursor.execute("""
+                            SELECT *
+                            FROM account_txns
+                            ORDER BY address;
+                            """)
+            py_account_txns = py_cursor.fetchall()
+            rs_cursor.execute("""
+                            SELECT *
+                            FROM account_txns
+                            ORDER BY address;
+                            """)
+            rs_account_txns = rs_cursor.fetchall()
+
+            i=0
+            j=0
+
+            while i<len(py_account_txns) and j<len(rs_account_txns):
+                if py_account_txns[i]['address'] < rs_account_txns[j]['address']:
+                    logger.error(f"Couldn't find the address {py_account_txns[i]['address']} in account_txns table of {ingesrs._PG_DB}")
+                    i+=1
+                elif py_account_txns[i]['address'] > rs_account_txns[j]['account']:
+                    logger.error(f"Couldn't find the address {rs_account_txns[j]['account']} in account_txns table of {ingespy._PG_DB}")
+                    j+=1
+                else:
+                    for key in py_account_txns[i]:
+                        if key != 'rowid' and py_account_txns[i].get(key) != rs_account_txns[j].get(key):
+                            logger.error(f"Inconsistent {key} for address {py_account_txns[i]['address']} in account_txns table")
+                    i+=1
+                    j+=1
+
+            while i<len(py_account_txns):
+                logger.error(f"Couldn't find the address {py_account_txns[i]['address']} in account_txns table of {ingesrs._PG_DB}")
+                i+=1
+            while j<len(rs_account_txns):
+                logger.error(f"Couldn't find the address {rs_account_txns[j]['account']} in account_txns table of {ingespy._PG_DB}")
+                j+=1
+
             logger.info("Validator script finished!")
 
 if __name__ == "__main__":
