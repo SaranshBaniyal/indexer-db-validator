@@ -30,23 +30,6 @@ tx_msg_type = [
     'msgcancelunbondingdelegation'
 ]
 
-# module_table_query = {
-#     "balances": """SELECT *
-#                     FROM balances
-#                     ORDER BY address, denom;""",
-#     "denom_metatdata": """SELECT *
-#                     FROM denom_metatdata
-#                     ORDER BY denom, decimal;""",
-#     "staked": """SELECT *
-#                     FROM staked
-#                     ORDER BY address, validator_address;""",
-#     "unstaking": """SELECT *
-#                     FROM unstaking
-#                     ORDER BY address, validator_address;""",
-#     "validator_metadata": """SELECT *
-#                     FROM validator_metadata
-#                     ORDER BY validator_address;"""
-# }
 
 class IndexerDatabase:
     def __init__(self, db_name, user, password, host, port):
@@ -67,10 +50,9 @@ class IndexerDatabase:
         except psycopg2.OperationalError as e:
             logger.error(f"Couldn't connect to {db_name}: {e}")
 
-
-def check_lists(py_list, rs_list, pk, table_name, py_db_name, rs_db_name):
 #to check and log inconsistencies in list of dict returned by psycopg2
 #pk should be a list of keys which form primary key (in order in which the lists are sorted)
+def check_lists(py_list, rs_list, pk, table_name, py_db_name, rs_db_name):
     i=0
     j=0
     while i<len(py_list) and j<len(rs_list):
@@ -106,7 +88,6 @@ def main():
 
     logger.info("Starting validator script!")
 
-    #compares data of ingespy against ingesrs
     with ingespy.conn as py_conn, ingesrs.conn as rs_conn:
         with py_conn.cursor(cursor_factory=RealDictCursor) as py_cursor, rs_conn.cursor(cursor_factory=RealDictCursor) as rs_cursor:
             py_cursor.execute("""
@@ -275,70 +256,132 @@ def main():
 
 
             #for checking state tables of different modules at the latest height
-            # py_cursor.execute("""
-            #                 SELECT *
-            #                 FROM module_state
-            #                 ORDER BY module_name;
-            #                 """)
-            # py_module_state = py_cursor.fetchall()
-            # rs_cursor.execute("""
-            #                 SELECT *
-            #                 FROM module_state
-            #                 ORDER BY module_name;
-            #                 """)
-            # rs_module_state = rs_cursor.fetchall()
+            py_cursor.execute("""
+                            SELECT *
+                            FROM module_state
+                            ORDER BY module_name;
+                            """)
+            py_module_state = py_cursor.fetchall()
+            rs_cursor.execute("""
+                            SELECT *
+                            FROM module_state
+                            ORDER BY module_name;
+                            """)
+            rs_module_state = rs_cursor.fetchall()
 
-            # i=0
-            # j=0
+            i=0
+            j=0
             
-            # while i<len(py_module_state) and j<len(rs_module_state):
-            #     if py_module_state[i]['module_name'] == rs_module_state[j]['module_name']:
-            #         if py_module_state[i]['last_update_height'] == rs_module_state[j]['last_update_height']:
-            #             if py_module_state[i]['module_name']=="balances":
-            #                 pass
-            #             elif py_module_state[i]['module_name']=="denom_metadata":
-            #                 pass
-            #             elif py_module_state[i]['module_name']=="staked":
-            #                 pass
-            #             elif py_module_state[i]['module_name']=="unstaking":
-            #                 pass
-            #             elif py_module_state[i]['module_name']=="validator_metadata":
-            #                 pass
-            #         else:
-            #             logger.error(f"Inconsistent last_update_height for {py_module_state[i]['module_name']}: {ingespy._PG_DB}: {py_module_state[i]['last_update_height']}, {ingesrs._PG_DB}: {rs_module_state[j]['last_update_height']}")
-            #         i+=1
-            #         j+=1
+            while i<len(py_module_state) and j<len(rs_module_state):
+                if py_module_state[i]['module_name'] == rs_module_state[j]['module_name']:
+                    if py_module_state[i]['last_update_height'] == rs_module_state[j]['last_update_height']:
+                        if py_module_state[i]['module_name']=="balances":
+                            py_cursor.execute("""
+                                            SELECT *
+                                            FROM balances
+                                            ORDER BY address, denom;
+                                            """)
+                            py_balances = py_cursor.fetchall()
+                            rs_cursor.execute("""
+                                            SELECT *
+                                            FROM balances
+                                            ORDER BY address, denom;
+                                            """)
+                            rs_balances = rs_cursor.fetchall()
+                            check_lists(py_balances, rs_balances, ["address", "denom"], "balances", ingespy._PG_DB, ingesrs._PG_DB)
+                        elif py_module_state[i]['module_name']=="denom_metadata":
+                            py_cursor.execute("""
+                                            SELECT *
+                                            FROM denom_metatdata
+                                            ORDER BY denom, decimal;
+                                            """)
+                            py_denom_metadata = py_cursor.fetchall()
+                            rs_cursor.execute("""
+                                            SELECT *
+                                            FROM denom_metatdata
+                                            ORDER BY denom;
+                                            """)
+                            rs_denom_metadata = rs_cursor.fetchall()
+                            check_lists(py_denom_metadata, rs_denom_metadata, ["denom"], "denom_metadata", ingespy._PG_DB, ingesrs._PG_DB)
+                        elif py_module_state[i]['module_name']=="staked":
+                            py_cursor.execute("""
+                                            SELECT *
+                                            FROM staked
+                                            ORDER BY address, validator_address;
+                                            """)
+                            py_staked = py_cursor.fetchall()
+                            rs_cursor.execute("""
+                                            SELECT *
+                                            FROM staked
+                                            ORDER BY address, validator_address;
+                                            """)
+                            rs_staked = rs_cursor.fetchall()
+                            check_lists(py_staked, rs_staked, ["address", "validator_address"], "staked", ingespy._PG_DB, ingesrs._PG_DB)
+                        elif py_module_state[i]['module_name']=="unstaking":
+                            py_cursor.execute("""
+                                            SELECT *
+                                            FROM unstaking
+                                            ORDER BY address, validator_address;
+                                            """)
+                            py_unstaking = py_cursor.fetchall()
+                            rs_cursor.execute("""
+                                            SELECT *
+                                            FROM unstaking
+                                            ORDER BY address, validator_address;
+                                            """)
+                            rs_unstaking = rs_cursor.fetchall()
+                            check_lists(py_unstaking, rs_unstaking, ["address", "validator_address"], "unstaking", ingespy._PG_DB, ingesrs._PG_DB)
+                        elif py_module_state[i]['module_name']=="validator_metadata":
+                            py_cursor.execute("""
+                                            SELECT *
+                                            FROM validator_metadata
+                                            ORDER BY validator_address;
+                                            """)
+                            py_validator_metadata = py_cursor.fetchall()
+                            rs_cursor.execute("""
+                                            SELECT *
+                                            FROM validator_metadata
+                                            ORDER BY validator_address;
+                                            """)
+                            rs_validator_metadata = rs_cursor.fetchall()
+                            check_lists(py_validator_metadata, rs_validator_metadata, ["validator_address"], "validator_metadata", ingespy._PG_DB, ingesrs._PG_DB)
+                    else:
+                        logger.error(f"Inconsistent last_update_height for {py_module_state[i]['module_name']}: {ingespy._PG_DB}: {py_module_state[i]['last_update_height']}, {ingesrs._PG_DB}: {rs_module_state[j]['last_update_height']}")
+                    i+=1
+                    j+=1
 
-            #     elif py_module_state[i]['module_name'] < rs_module_state[j]['module_name']:
-            #         logger.error(f"Couldn't find {py_module_state[i]['module_name']} in module_state table of {ingesrs._PG_DB}")
-            #         i+=1
+                elif py_module_state[i]['module_name'] < rs_module_state[j]['module_name']:
+                    logger.error(f"Couldn't find {py_module_state[i]['module_name']} in module_state table of {ingesrs._PG_DB}")
+                    i+=1
 
 
-            #     elif py_module_state[i]['module_name'] > rs_module_state[j]['module_name']:
-            #         logger.error(f"Couldn't find {rs_module_state[j]['module_name']} in module_state table of {ingespy._PG_DB}")
-            #         j+=1
+                elif py_module_state[i]['module_name'] > rs_module_state[j]['module_name']:
+                    logger.error(f"Couldn't find {rs_module_state[j]['module_name']} in module_state table of {ingespy._PG_DB}")
+                    j+=1
 
-            # while i<len(py_module_state):
-            #     logger.error(f"Couldn't find {py_module_state[i]['module_name']} in module_state table of {ingesrs._PG_DB}")
-            #     i+=1
-            # while j<len(rs_module_state):
-            #     logger.error(f"Couldn't find {rs_module_state[j]['module_name']} in module_state table of {ingespy._PG_DB}")
-            #     j+=1
+            while i<len(py_module_state):
+                logger.error(f"Couldn't find {py_module_state[i]['module_name']} in module_state table of {ingesrs._PG_DB}")
+                i+=1
+            while j<len(rs_module_state):
+                logger.error(f"Couldn't find {rs_module_state[j]['module_name']} in module_state table of {ingespy._PG_DB}")
+                j+=1
 
 
 
-            # py_cursor.execute("""
-            #                 SELECT *
-            #                 FROM account_txns
-            #                 ORDER BY address;
-            #                 """)
-            # py_account_txns = py_cursor.fetchall()
-            # rs_cursor.execute("""
-            #                 SELECT *
-            #                 FROM account_txns
-            #                 ORDER BY address;
-            #                 """)
-            # rs_account_txns = rs_cursor.fetchall()
+            py_cursor.execute("""
+                            SELECT *
+                            FROM account_txns
+                            ORDER BY address;
+                            """)
+            py_account_txns = py_cursor.fetchall()
+            rs_cursor.execute("""
+                            SELECT *
+                            FROM account_txns
+                            ORDER BY address;
+                            """)
+            rs_account_txns = rs_cursor.fetchall()
+
+            check_lists(py_account_txns, rs_account_txns, ["address"], "account_txns", ingespy._PG_DB, ingesrs._PG_DB)
 
             # i=0
             # j=0
